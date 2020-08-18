@@ -18,8 +18,8 @@ import (
 
 var stateStags = &cobra.Command{
 	Use: "state_stages",
-	Short: `Move all StateStages (4,5,6,7,8,9) forward. 
-			Stops at Stage 3 progress or at "--block".
+	Short: `Move all StateStages (which happen after senders) forward. 
+			Stops at StageSenders progress or at "--block".
 			Each iteration test will move forward "--unwind_every" blocks, then unwind "--unwind" blocks.
 			Use reset_state command to re-run this test.
 			When finish all cycles, does comparison to "--reference_chaindata" if flag provided.
@@ -87,7 +87,7 @@ func syncBySmallSteps(ctx context.Context, chaindata string) error {
 	bc, st, progress := newSync(ch, db, changeSetHook)
 	defer bc.Stop()
 
-	st.DisableStages(stages.Headers, stages.Bodies, stages.Senders, stages.TxPool)
+	st.DisableStages(stages.Headers, stages.BlockHashes, stages.Bodies, stages.Senders, stages.TxPool)
 
 	senderStageProgress := progress(stages.Senders).BlockNumber
 
@@ -112,7 +112,7 @@ func syncBySmallSteps(ctx context.Context, chaindata string) error {
 
 		// set block limit of execute stage
 		st.MockExecFunc(stages.Execution, func(stageState *stagedsync.StageState, unwinder stagedsync.Unwinder) error {
-			if err := stagedsync.SpawnExecuteBlocksStage(stageState, db, bc.Config(), bc, bc.GetVMConfig(), execToBlock, ch, nil, false, changeSetHook); err != nil {
+			if err := stagedsync.SpawnExecuteBlocksStage(stageState, db, bc.Config(), bc, bc.GetVMConfig(), execToBlock, ch, false, changeSetHook); err != nil {
 				return fmt.Errorf("spawnExecuteBlocksStage: %w", err)
 			}
 			return nil
@@ -127,6 +127,7 @@ func syncBySmallSteps(ctx context.Context, chaindata string) error {
 				return err
 			}
 			delete(expectedAccountChanges, blockN)
+			delete(expectedStorageChanges, blockN)
 		}
 
 		// Unwind all stages to `execStage - unwind` block

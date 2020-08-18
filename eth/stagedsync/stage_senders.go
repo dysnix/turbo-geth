@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ledgerwatch/turbo-geth/core/rawdb"
 	"math/big"
 	"os"
-	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
 	"sync"
@@ -136,7 +136,12 @@ func SpawnRecoverSendersStage(cfg Stage3Config, s *StageState, db ethdb.Database
 				}
 			}
 
-			jobs <- &senderRecoveryJob{bodyRlp: common.CopyBytes(v), blockNumber: blockNumber, index: int(blockNumber - s.BlockNumber - 1)}
+			bodyRlp, err := rawdb.DecompressBlockBody(data)
+			if err != nil {
+				return false, err
+			}
+
+			jobs <- &senderRecoveryJob{bodyRlp: bodyRlp, blockNumber: blockNumber, index: int(blockNumber - s.BlockNumber - 1)}
 
 			return true, nil
 		}); err != nil {
@@ -149,11 +154,7 @@ func SpawnRecoverSendersStage(cfg Stage3Config, s *StageState, db ethdb.Database
 	wg.Add(cfg.NumOfGoroutines)
 	for i := 0; i < cfg.NumOfGoroutines; i++ {
 		go func() {
-			runtime.LockOSThread()
-			defer func() {
-				wg.Done()
-				runtime.UnlockOSThread()
-			}()
+			defer wg.Done()
 
 			// each goroutine gets it's own crypto context to make sure they are really parallel
 			recoverSenders(secp256k1.NewContext(), config, jobs, out, quitCh)

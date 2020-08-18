@@ -208,11 +208,11 @@ func (e *NoRewardEngine) Author(header *types.Header) (common.Address, error) {
 	return e.inner.Author(header)
 }
 
-func (e *NoRewardEngine) VerifyHeader(chain consensus.ChainReader, header *types.Header, seal bool) error {
+func (e *NoRewardEngine) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
 	return e.inner.VerifyHeader(chain, header, seal)
 }
 
-func (e *NoRewardEngine) VerifyHeaders(chain consensus.ChainReader, headers []*types.Header, seals []bool) (func(), <-chan error) {
+func (e *NoRewardEngine) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool) (func(), <-chan error) {
 	return e.inner.VerifyHeaders(chain, headers, seals)
 }
 
@@ -220,11 +220,11 @@ func (e *NoRewardEngine) VerifyUncles(chain consensus.ChainReader, block *types.
 	return e.inner.VerifyUncles(chain, block)
 }
 
-func (e *NoRewardEngine) VerifySeal(chain consensus.ChainReader, header *types.Header) error {
+func (e *NoRewardEngine) VerifySeal(chain consensus.ChainHeaderReader, header *types.Header) error {
 	return e.inner.VerifySeal(chain, header)
 }
 
-func (e *NoRewardEngine) Prepare(chain consensus.ChainReader, header *types.Header) error {
+func (e *NoRewardEngine) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
 	return e.inner.Prepare(chain, header)
 }
 
@@ -260,7 +260,7 @@ func (e *NoRewardEngine) FinalizeAndAssemble(chainConfig *params.ChainConfig, he
 	}
 }
 
-func (e *NoRewardEngine) Seal(ctx consensus.Cancel, chain consensus.ChainReader, block *types.Block, results chan<- consensus.ResultWithContext, stop <-chan struct{}) error {
+func (e *NoRewardEngine) Seal(ctx consensus.Cancel, chain consensus.ChainHeaderReader, block *types.Block, results chan<- consensus.ResultWithContext, stop <-chan struct{}) error {
 	return e.inner.Seal(ctx, chain, block, results, stop)
 }
 
@@ -268,11 +268,11 @@ func (e *NoRewardEngine) SealHash(header *types.Header) common.Hash {
 	return e.inner.SealHash(header)
 }
 
-func (e *NoRewardEngine) CalcDifficulty(chain consensus.ChainReader, time uint64, parent *types.Header) *big.Int {
+func (e *NoRewardEngine) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
 	return e.inner.CalcDifficulty(chain, time, parent)
 }
 
-func (e *NoRewardEngine) APIs(chain consensus.ChainReader) []rpc.API {
+func (e *NoRewardEngine) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 	return e.inner.APIs(chain)
 }
 
@@ -408,7 +408,7 @@ func (api *RetestethAPI) SetChainParams(_ context.Context, chainParams ChainPara
 	}
 	engine := &NoRewardEngine{inner: inner, rewardsOn: chainParams.SealEngine != "NoReward"}
 	txCacher := core.NewTxSenderCacher(runtime.NumCPU())
-	blockchain, err := core.NewBlockChain(ethDb, nil, chainConfig, engine, vm.Config{}, nil, api.blockchain.DestsCache, txCacher)
+	blockchain, err := core.NewBlockChain(ethDb, nil, chainConfig, engine, vm.Config{}, nil, txCacher)
 	if err != nil {
 		return false, err
 	}
@@ -418,9 +418,7 @@ func (api *RetestethAPI) SetChainParams(_ context.Context, chainParams ChainPara
 	api.author = chainParams.Genesis.Author
 	api.extraData = chainParams.Genesis.ExtraData
 	api.ethDb = ethDb
-	if hasKV, ok := api.ethDb.(ethdb.HasKV); ok {
-		api.kv = hasKV.KV()
-	}
+	api.kv = ethDb.KV()
 	api.engine = engine
 	api.blockchain = blockchain
 	//api.db = state.NewDatabase(api.ethDb)
@@ -539,7 +537,6 @@ func (api *RetestethAPI) mineBlock() error {
 					statedb,
 					tds.TrieStateWriter(),
 					header, tx, &header.GasUsed, *api.blockchain.GetVMConfig(),
-					api.blockchain.DestsCache,
 				)
 				if err != nil {
 					statedb.RevertToSnapshot(snap)
@@ -690,7 +687,7 @@ func (api *RetestethAPI) AccountRange(ctx context.Context,
 			msg, _ := tx.AsMessage(signer)
 			context := core.NewEVMContext(msg, block.Header(), api.blockchain, nil)
 			// Not yet the searched for transaction, execute on top of the current state
-			vmenv := vm.NewEVM(context, statedb, api.blockchain.Config(), vm.Config{}, api.blockchain.DestsCache)
+			vmenv := vm.NewEVM(context, statedb, api.blockchain.Config(), vm.Config{})
 			if _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(tx.Gas())); err != nil {
 				return AccountRangeResult{}, fmt.Errorf("transaction %#x failed: %v", tx.Hash(), err)
 			}
@@ -790,7 +787,7 @@ func (api *RetestethAPI) StorageRangeAt(ctx context.Context,
 		dbstate = state.NewDbState(api.kv, header.Number.Uint64())
 	} else {
 		var err error
-		_, _, _, dbstate, err = eth.ComputeTxEnv(ctx, api.blockchain, api.blockchain.Config(), api.blockchain, api.kv, block.Hash(), txIndex, api.blockchain.DestsCache)
+		_, _, _, dbstate, err = eth.ComputeTxEnv(ctx, api.blockchain, api.blockchain.Config(), api.blockchain, api.kv, block.Hash(), txIndex)
 		if err != nil {
 			return StorageRangeResult{}, err
 		}
